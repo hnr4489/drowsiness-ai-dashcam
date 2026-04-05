@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚗 AI Dashcam v3.0 - EAR Tracking</title>
+    <title>🚗 AI Dashcam v4.0 - Mobile Fix</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
     <style>
@@ -11,16 +11,17 @@
         #webcam { 
             border-radius: 20px; border: 5px solid #333; 
             width: 100%; max-width: 640px; transform: scaleX(-1); display: none; 
+            object-fit: cover; /* Helps prevent mobile squishing */
         }
         .alert-video { border-color: red !important; box-shadow: 0 0 50px red; }
-        #status { font-size: 2.5rem; margin-top: 20px; color: lime; display: none; font-weight: bold;}
+        #status { font-size: 2.2rem; margin-top: 20px; color: lime; display: none; font-weight: bold;}
         .alert-text { color: red !important; text-shadow: 0 0 15px red; }
         #start-btn {
             padding: 15px 30px; font-size: 1.2rem; background-color: lime; color: black;
             border: none; border-radius: 10px; cursor: pointer; font-weight: bold; margin-bottom: 20px;
         }
-        .controls { background: #1e2126; padding: 15px; border-radius: 10px; display: inline-block; margin-top: 20px; display: none;}
-        input[type=range] { width: 200px; cursor: pointer; }
+        .controls { background: #1e2126; padding: 15px; border-radius: 10px; display: inline-block; margin-top: 20px; display: none; width: 90%; max-width: 400px;}
+        input[type=range] { width: 100%; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -28,7 +29,7 @@
     <h1>🚗 AI Drowsiness Dashcam</h1>
     <button id="start-btn" onclick="startSystem()">Start Camera & AI</button>
     
-    <div id="loading" style="display:none; color: yellow; margin: 20px; font-size: 1.2rem;">⏳ Loading AI Model... Please wait...</div>
+    <div id="loading" style="display:none; color: yellow; margin: 20px; font-size: 1.2rem;">⏳ Loading Mobile AI... Please wait...</div>
     
     <div>
         <video id="webcam" autoplay playsinline></video>
@@ -40,7 +41,6 @@
         <h3 id="score" style="margin: 0 0 10px 0; color: #61dafb;">Current EAR: 0.00</h3>
         <label for="threshold" style="font-weight: bold;">Trigger Alert if EAR drops below: <span id="thresh-val" style="color: yellow;">0.25</span></label><br>
         <input type="range" id="threshold" min="0.10" max="0.40" step="0.01" value="0.25" oninput="document.getElementById('thresh-val').innerText=this.value">
-        <p style="font-size: 0.8rem; color: #aaa;">(Lower number = harder to trigger alarm)</p>
     </div>
 
     <script>
@@ -54,12 +54,10 @@
         const alarm = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
         alarm.loop = true;
 
-        // Euclidean Distance Helper
         function getDistance(p1, p2) {
             return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
         }
 
-        // Calculate Eye Aspect Ratio
         function getEAR(eye) {
             const v1 = getDistance(eye[1], eye[5]);
             const v2 = getDistance(eye[2], eye[4]);
@@ -72,19 +70,39 @@
             loadingText.style.display = 'block';
 
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+                // Request camera
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user" }, 
+                    audio: false 
+                });
+                
                 video.srcObject = stream;
                 video.style.display = 'inline-block';
-                await new Promise((resolve) => video.onloadedmetadata = () => resolve(video));
+                
+                // CRITICAL MOBILE FIX: Force wait for video to actually play and lock dimensions
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        // This tells the AI the EXACT pixel size of the mobile camera
+                        video.width = video.videoWidth;
+                        video.height = video.videoHeight;
+                        resolve();
+                    };
+                });
 
+                // Load AI Model
                 const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
-                const detector = await faceLandmarksDetection.createDetector(model, { runtime: 'tfjs', refineLandmarks: true });
+                const detector = await faceLandmarksDetection.createDetector(model, { 
+                    runtime: 'tfjs', 
+                    refineLandmarks: true 
+                });
 
                 loadingText.style.display = 'none';
                 statusText.style.display = 'block';
                 controls.style.display = 'inline-block';
 
                 setInterval(async () => {
+                    // Feed the perfectly sized video to the AI
                     const faces = await detector.estimateFaces(video);
                     
                     if (faces.length > 0) {
@@ -97,11 +115,9 @@
                         const rightEAR = getEAR(rightEyePoints);
                         const avgEAR = (leftEAR + rightEAR) / 2.0;
 
-                        // Display current EAR on screen
                         scoreText.innerText = `Current EAR: ${avgEAR.toFixed(2)}`;
                         scoreText.style.color = "#61dafb";
 
-                        // Get user-defined threshold from the slider
                         const threshold = parseFloat(document.getElementById('threshold').value);
 
                         if (avgEAR < threshold) {
@@ -117,8 +133,7 @@
                             alarm.currentTime = 0;
                         }
                     } else {
-                        // NEW CODE: This tells you if the AI loses your face
-                        scoreText.innerText = "❌ NO FACE DETECTED - Adjust Camera";
+                        scoreText.innerText = "❌ NO FACE DETECTED";
                         scoreText.style.color = "red";
                         statusText.innerText = "⚠️ Tracking Lost";
                         statusText.className = "";
@@ -128,7 +143,7 @@
                 }, 100);
 
             } catch (err) {
-                loadingText.innerText = "❌ Camera Access Denied. Please refresh and allow permissions.";
+                loadingText.innerText = "❌ Camera Access Denied. Check mobile permissions.";
                 loadingText.style.color = "red";
             }
         }
