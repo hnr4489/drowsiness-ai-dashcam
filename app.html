@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚗 AI Dashcam v6.0 - Max Volume Siren</title>
+    <title>🚗 AI Dashcam v7.0 - Mobile Debugger</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
     <style>
@@ -22,6 +22,13 @@
         }
         .controls { background: #1e2126; padding: 15px; border-radius: 10px; display: inline-block; margin-top: 20px; display: none; width: 90%; max-width: 400px;}
         input[type=range] { width: 100%; cursor: pointer; }
+        
+        /* The X-Ray Debugger Screen */
+        #debug-log {
+            background: black; color: #ff4c4c; padding: 10px; margin-top: 20px;
+            text-align: left; font-family: monospace; font-size: 12px; border-radius: 5px;
+            white-space: pre-wrap; word-wrap: break-word; border: 1px solid red;
+        }
     </style>
 </head>
 <body>
@@ -31,6 +38,8 @@
     
     <div id="loading" style="display:none; color: yellow; margin: 20px; font-size: 1.2rem;">⏳ Loading Mobile AI... Please wait...</div>
     
+    <div id="debug-log">System Booting...<br></div>
+
     <div>
         <video id="webcam" autoplay playsinline></video>
     </div>
@@ -44,6 +53,18 @@
     </div>
 
     <script>
+        const debugLog = document.getElementById('debug-log');
+        
+        // Catch ANY hidden errors and print them to the screen
+        window.onerror = function(message, source, lineno, colno, error) {
+            debugLog.innerHTML += `🚨 ERROR: ${message} (Line ${lineno})<br>`;
+            return false;
+        };
+        // Catch Promise rejections (like camera being blocked)
+        window.onunhandledrejection = function(event) {
+            debugLog.innerHTML += `🚨 REJECTION: ${event.reason}<br>`;
+        };
+
         const video = document.getElementById('webcam');
         const statusText = document.getElementById('status');
         const scoreText = document.getElementById('score');
@@ -51,10 +72,9 @@
         const startBtn = document.getElementById('start-btn');
         const controls = document.getElementById('controls');
         
-        // Swapped to an aggressive, piercing emergency siren
         const alarm = new Audio('https://actions.google.com/sounds/v1/emergency/emergency_siren_close_long.ogg');
         alarm.loop = true;
-        alarm.volume = 1.0; // 100% of the phone's Media Volume
+        alarm.volume = 1.0;
 
         function getDistance(p1, p2) {
             return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
@@ -68,20 +88,28 @@
         }
 
         async function startSystem() {
-            startBtn.style.display = 'none';
-            loadingText.style.display = 'block';
-
-            alarm.play().then(() => {
-                alarm.pause();
-                alarm.currentTime = 0;
-            }).catch(err => console.log("Audio unlock failed, user needs to tap screen again", err));
-
+            debugLog.innerHTML += "➡️ Button Clicked. Starting system...<br>";
+            
             try {
+                startBtn.style.display = 'none';
+                loadingText.style.display = 'block';
+
+                debugLog.innerHTML += "➡️ Attempting to unlock audio...<br>";
+                alarm.play().then(() => {
+                    alarm.pause();
+                    alarm.currentTime = 0;
+                    debugLog.innerHTML += "✅ Audio unlocked.<br>";
+                }).catch(err => {
+                    debugLog.innerHTML += `⚠️ Audio unlock warning: ${err.message}<br>`;
+                });
+
+                debugLog.innerHTML += "➡️ Requesting Camera Permissions...<br>";
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "user" }, 
                     audio: false 
                 });
                 
+                debugLog.innerHTML += "✅ Camera access granted. Starting video...<br>";
                 video.srcObject = stream;
                 video.style.display = 'inline-block';
                 
@@ -90,24 +118,74 @@
                         video.play();
                         video.width = video.videoWidth;
                         video.height = video.videoHeight;
+                        debugLog.innerHTML += `✅ Video playing at ${video.width}x${video.height}.<br>`;
                         resolve();
                     };
                 });
 
+                debugLog.innerHTML += "➡️ Downloading AI Model (This may take 10-20 seconds on mobile)...<br>";
                 const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
                 const detector = await faceLandmarksDetection.createDetector(model, { 
                     runtime: 'tfjs', 
                     refineLandmarks: true 
                 });
 
+                debugLog.innerHTML += "✅ AI Model Loaded. Starting tracking loop.<br>";
                 loadingText.style.display = 'none';
                 statusText.style.display = 'block';
                 controls.style.display = 'inline-block';
+                
+                // Hide the debug log once successful to keep the screen clean
+                setTimeout(() => { debugLog.style.display = 'none'; }, 3000);
 
                 setInterval(async () => {
                     const faces = await detector.estimateFaces(video);
                     
                     if (faces.length > 0) {
                         const keypoints = faces[0].keypoints;
-                        
-                        const leftEyePoints = [33, 160, 158, 133, 153,
+                        const leftEyePoints = [33, 160, 158, 133, 153, 144].map(id => keypoints[id]);
+                        const rightEyePoints = [362, 385, 387, 263, 373, 380].map(id => keypoints[id]);
+
+                        const leftEAR = getEAR(leftEyePoints);
+                        const rightEAR = getEAR(rightEyePoints);
+                        const avgEAR = (leftEAR + rightEAR) / 2.0;
+
+                        scoreText.innerText = `Current EAR: ${avgEAR.toFixed(2)}`;
+                        scoreText.style.color = "#61dafb";
+
+                        const threshold = parseFloat(document.getElementById('threshold').value);
+
+                        if (avgEAR < threshold) {
+                            statusText.innerText = "🚨 WAKE UP! 🚨";
+                            statusText.className = "alert-text";
+                            video.className = "alert-video";
+                            
+                            if (alarm.paused) {
+                                alarm.play().catch(() => {});
+                            }
+                        } else {
+                            statusText.innerText = "✅ Driver Focused";
+                            statusText.className = "";
+                            video.className = "";
+                            alarm.pause();
+                            alarm.currentTime = 0;
+                        }
+                    } else {
+                        scoreText.innerText = "❌ NO FACE DETECTED";
+                        scoreText.style.color = "red";
+                        statusText.innerText = "⚠️ Tracking Lost";
+                        statusText.className = "";
+                        video.className = "";
+                        alarm.pause();
+                    }
+                }, 100);
+
+            } catch (err) {
+                debugLog.innerHTML += `🚨 FATAL ERROR: ${err.name} - ${err.message}<br>`;
+                loadingText.innerText = "❌ System Failed. See error log below.";
+                loadingText.style.color = "red";
+            }
+        }
+    </script>
+</body>
+</html>
