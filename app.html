@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚗 AI Dashcam v5.0 - Audio Unlocked</title>
+    <title>🚗 AI Dashcam v6.0 - Max Volume Siren</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
     <style>
@@ -51,10 +51,10 @@
         const startBtn = document.getElementById('start-btn');
         const controls = document.getElementById('controls');
         
-        // Louder, continuous digital alarm sound
-        const alarm = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg');
+        // Swapped to an aggressive, piercing emergency siren
+        const alarm = new Audio('https://actions.google.com/sounds/v1/emergency/emergency_siren_close_long.ogg');
         alarm.loop = true;
-        alarm.volume = 1.0; // Max volume
+        alarm.volume = 1.0; // 100% of the phone's Media Volume
 
         function getDistance(p1, p2) {
             return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
@@ -71,13 +71,10 @@
             startBtn.style.display = 'none';
             loadingText.style.display = 'block';
 
-            // --- CRITICAL AUDIO FIX ---
-            // This forces the browser to authorize sound immediately when the button is clicked
             alarm.play().then(() => {
                 alarm.pause();
                 alarm.currentTime = 0;
             }).catch(err => console.log("Audio unlock failed, user needs to tap screen again", err));
-            // --------------------------
 
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -113,49 +110,4 @@
                     if (faces.length > 0) {
                         const keypoints = faces[0].keypoints;
                         
-                        const leftEyePoints = [33, 160, 158, 133, 153, 144].map(id => keypoints[id]);
-                        const rightEyePoints = [362, 385, 387, 263, 373, 380].map(id => keypoints[id]);
-
-                        const leftEAR = getEAR(leftEyePoints);
-                        const rightEAR = getEAR(rightEyePoints);
-                        const avgEAR = (leftEAR + rightEAR) / 2.0;
-
-                        scoreText.innerText = `Current EAR: ${avgEAR.toFixed(2)}`;
-                        scoreText.style.color = "#61dafb";
-
-                        const threshold = parseFloat(document.getElementById('threshold').value);
-
-                        if (avgEAR < threshold) {
-                            statusText.innerText = "🚨 WAKE UP! 🚨";
-                            statusText.className = "alert-text";
-                            video.className = "alert-video";
-                            
-                            // Check if audio is actually playing, if not, play it
-                            if (alarm.paused) {
-                                alarm.play().catch((e) => console.log("Still blocked by browser", e));
-                            }
-                        } else {
-                            statusText.innerText = "✅ Driver Focused";
-                            statusText.className = "";
-                            video.className = "";
-                            alarm.pause();
-                            alarm.currentTime = 0;
-                        }
-                    } else {
-                        scoreText.innerText = "❌ NO FACE DETECTED";
-                        scoreText.style.color = "red";
-                        statusText.innerText = "⚠️ Tracking Lost";
-                        statusText.className = "";
-                        video.className = "";
-                        alarm.pause();
-                    }
-                }, 100);
-
-            } catch (err) {
-                loadingText.innerText = "❌ Camera Access Denied. Check mobile permissions.";
-                loadingText.style.color = "red";
-            }
-        }
-    </script>
-</body>
-</html>
+                        const leftEyePoints = [33, 160, 158, 133, 153,
